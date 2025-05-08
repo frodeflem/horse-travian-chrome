@@ -1,6 +1,5 @@
+import { API_HOST, EXPORT_ENDPOINT, GET_USER_TOKEN_BY_NAME_ENDPOINT, LOGIN_ENDPOINT, REFRESH_TOKEN_ENDPOINT } from "./config";
 import { BaseToken, AccessToken, RefreshToken, UserAccessToken } from "./dtos";
-
-const API_HOST = "https://api.flemel.no";
 
 function isTokenValid(token: BaseToken | null): boolean {
 	return !!(token && token.exp && token.exp * 1000 > Date.now());
@@ -93,7 +92,7 @@ export class PublicApi {
 	}
 
 	static async login(username: string, password: string) {
-		const response = await this.POST("/login", {
+		const response = await this.POST(LOGIN_ENDPOINT, {
 			username: username,
 			password: password,
 		});
@@ -107,7 +106,7 @@ export class PublicApi {
 	}
 
 	static async refreshAccessToken() {
-		const response = await this.POST("/refresh_token", {
+		const response = await this.POST(REFRESH_TOKEN_ENDPOINT, {
 			refresh_token: refreshTokenString,
 		});
 
@@ -214,15 +213,11 @@ export class AdminApi {
 			}
 		}
 
-		if (!(typeof window === undefined)) {
-			window.history.pushState(null, "", "/login");
-			window.location.reload();
-		}
 		return null;
 	}
 
 	static async getUserTokenByName(avatar_name: string, host: string, sitter_avatar_name: string | null = null) {
-		const response = await this.GET(`/admin/user_token_by_name?avatar_name=${avatar_name}&host=${host}${sitter_avatar_name ? `&sitter_avatar_name=${sitter_avatar_name}` : ""}`);
+		const response = await this.GET(`${GET_USER_TOKEN_BY_NAME_ENDPOINT}?avatar_name=${avatar_name}&host=${host}${sitter_avatar_name ? `&sitter_avatar_name=${sitter_avatar_name}` : ""}`);
 		const data = await response.json();
 		return data;
 	}
@@ -302,10 +297,6 @@ export class UserApi {
 			}
 		}
 
-		if (!(typeof window === undefined)) {
-			window.history.pushState(null, "", "/login");
-			window.location.reload();
-		}
 		return null;
 	}
 
@@ -338,7 +329,7 @@ export class UserApi {
 	}
 
 	static async parsePage(url: string, body: string) {
-		const response = await this.fetch(`/gwon/parse-page?url=${url.replaceAll("&", "%26")}`, {
+		const response = await this.fetch(`${EXPORT_ENDPOINT}?url=${url.replaceAll("&", "%26")}`, {
 			method: "POST",
 			body: body,
 		});
