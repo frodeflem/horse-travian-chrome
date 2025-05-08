@@ -1,0 +1,26 @@
+{
+	"name": "Horse's Travian Tools",
+	"version": "1.0",
+	"description": "A Chrome extension for Horse's Travian Tools",
+	"manifest_version": 3,
+	"action": {
+		"default_title": "Send page source"
+	},
+	"permissions": [
+		"activeTab",
+		"scripting",
+		"storage",
+		"offscreen"
+	],
+	"host_permissions": [
+		"https://travian.flemel.no/*"
+	],
+	"background": {
+		"service_worker": "background.js",
+		"type": "module"
+	},
+	"options_ui": {
+		"page": "options.html",
+		"open_in_tab": false
+	}
+}
