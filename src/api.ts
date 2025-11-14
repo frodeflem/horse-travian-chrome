@@ -1,4 +1,4 @@
-import { API_HOST, EXPORT_ENDPOINT, GET_USER_TOKEN_BY_NAME_ENDPOINT, LOGIN_ENDPOINT, REFRESH_TOKEN_ENDPOINT } from "./config";
+import { API_HOST, EXPORT_ENDPOINT, GET_USER_TOKEN_BY_NAME_ENDPOINT, LOGIN_API_KEY_ENDPOINT, LOGIN_ENDPOINT, REFRESH_TOKEN_ENDPOINT } from "./config";
 import { BaseToken, AccessToken, RefreshToken, UserAccessToken } from "./dtos";
 
 function isTokenValid(token: BaseToken | null): boolean {
@@ -105,6 +105,19 @@ export class PublicApi {
 		setRefreshToken(refreshToken);
 	}
 
+	static async loginWithApiKey(apiKey: string) {
+		const response = await this.POST(LOGIN_API_KEY_ENDPOINT, {
+			api_key: apiKey,
+		});
+
+		const data = await response.json();
+		const accessToken = data.access_token;
+		const refreshToken = data.refresh_token;
+
+		setAccessToken(accessToken);
+		setRefreshToken(refreshToken);
+	}
+
 	static async refreshAccessToken() {
 		const response = await this.POST(REFRESH_TOKEN_ENDPOINT, {
 			refresh_token: refreshTokenString,
@@ -186,150 +199,23 @@ export class AdminApi {
 			}
 		}
 
-		const { adminUsername, password } = await chrome.storage.local.get(["adminUsername", "password"]);
-		if (adminUsername && password) {
-			await PublicApi.login(adminUsername, password);
+		const { apiKey } = await chrome.storage.local.get(["apiKey"]);
+		if (apiKey) {
+			await PublicApi.loginWithApiKey(apiKey);
 
 			if (isTokenValid(accessToken)) {
 				return accessTokenString;
 			} else {
-				throw new Error("Failed to login");
+				throw new Error("Failed to login with API key");
 			}
 		}
 
 		return null;
 	}
 
-	static async accessToken() {
-		if (isTokenValid(accessToken)) return accessToken;
-
-		if (isTokenValid(refreshToken)) {
-			await PublicApi.refreshAccessToken();
-
-			if (isTokenValid(accessToken)) {
-				return accessToken;
-			} else {
-				throw new Error("Failed to refresh access token");
-			}
-		}
-
-		return null;
-	}
-
-	static async getUserTokenByName(avatar_name: string, host: string, sitter_avatar_name: string | null = null) {
-		const response = await this.GET(`${GET_USER_TOKEN_BY_NAME_ENDPOINT}?avatar_name=${avatar_name}&host=${host}${sitter_avatar_name ? `&sitter_avatar_name=${sitter_avatar_name}` : ""}`);
-		const data = await response.json();
-		return data;
-	}
-}
-
-// User API
-export class UserApi {
-	static avatarName: string | null = null;
-	static avatarHost: string | null = null;
-
-	// fetch with bearer token middleware:
-	static async fetch(path: string, options: RequestInit) {
-		const response = await fetch(`${API_HOST}${path}`, {
-			...options,
-			headers: {
-				...options.headers,
-				Authorization: `Bearer ${await this.userToken()}`,
-			},
-		});
-
-		if (!response.ok) {
-			console.error(response);
-		}
-
-		return response;
-	}
-
-	static async GET(path: string) {
-		return await this.fetch(path, {
-			method: "GET",
-			headers: {
-				"Content-Type": "application/json",
-			},
-		});
-	}
-
-	static async POST(path: string, body?: any) {
-		return await this.fetch(path, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify(body),
-		});
-	}
-
-	static async PUT(path: string, body?: any) {
-		return await this.fetch(path, {
-			method: "PUT",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify(body),
-		});
-	}
-
-	static async DELETE(path: string, body?: any) {
-		return await this.fetch(path, {
-			method: "DELETE",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify(body),
-		});
-	}
-
-	static async userToken() {
-		if (isTokenValid(userToken)) return userTokenString;
-
-		if (isTokenValid(await AdminApi.accessToken())) {
-			await this.refreshUserTokenByName();
-
-			if (isTokenValid(userToken)) {
-				return userTokenString;
-			} else {
-				throw new Error("Failed to refresh user token");
-			}
-		}
-
-		return null;
-	}
-
-	static async refreshUserTokenByName() {
-		if (!this.avatarName || !this.avatarHost) throw new Error("No account selected");
-		const response = await AdminApi.getUserTokenByName(this.avatarName, this.avatarHost);
-		setUserToken(response);
-
-		if (!isTokenValid(userToken)) {
-			throw new Error("Failed to refresh user token");
-		}
-	}
-
-	static async setUserByName(avatarName: string, host: string) {
-		// Try to get a user token from storage with the given avatar name+host:
-		if (this.avatarName === avatarName && this.avatarHost === host) {
-			return;
-		}
-
-		this.avatarName = avatarName;
-		this.avatarHost = host;
-
-		const key = `userToken\0${avatarName}\0${host}`;
-		const { [key]: storedUserToken } = await chrome.storage.local.get([key]);
-		if (!storedUserToken || !isTokenValid(storedUserToken)) {
-			await this.refreshUserTokenByName();
-		} else {
-			await setUserToken(storedUserToken);
-		}
-	}
-
-	static async parsePage(url: string, body: string) {
-		const response = await this.fetch(`${EXPORT_ENDPOINT}?url=${url.replaceAll("&", "%26")}`, {
+	static async parsePage(url: string, avatarName: string, body: string) {
+		console.log(`${EXPORT_ENDPOINT}?avatar_name=${avatarName}&url=${url.replaceAll("&", "%26")}`);
+		const response = await this.fetch(`${EXPORT_ENDPOINT}?avatar_name=${avatarName}&url=${url.replaceAll("&", "%26")}`, {
 			method: "POST",
 			body: body,
 		});
@@ -340,15 +226,7 @@ export class UserApi {
 
 // Initialize tokens from storage:
 (async () => {
-	const {
-		accessToken: storedAccessToken,
-		refreshToken: storedRefreshToken,
-		userToken: storedUserToken,
-		avatarName: storedAvatarName,
-		avatarHost: storedAvatarHost,
-	} = await chrome.storage.local.get(["accessToken", "refreshToken", "userToken", "avatarName", "avatarHost"]);
-
-	console.log("Stored tokens:", { storedAccessToken, storedRefreshToken, storedUserToken });
+	const { accessToken: storedAccessToken, refreshToken: storedRefreshToken } = await chrome.storage.local.get(["accessToken", "refreshToken"]);
 
 	if (storedAccessToken) {
 		setAccessToken(storedAccessToken);
@@ -356,17 +234,5 @@ export class UserApi {
 
 	if (storedRefreshToken) {
 		setRefreshToken(storedRefreshToken);
-	}
-
-	if (storedUserToken) {
-		setUserToken(storedUserToken);
-	}
-
-	if (storedAvatarName) {
-		UserApi.avatarName = storedAvatarName;
-	}
-
-	if (storedAvatarHost) {
-		UserApi.avatarHost = storedAvatarHost;
 	}
 })();

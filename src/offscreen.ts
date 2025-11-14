@@ -8,7 +8,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 	const el = doc.querySelector<HTMLDivElement>("#sidebarBoxActiveVillage div.content div.playerName");
 
-	sendResponse({ playerName: el?.textContent?.trim() ?? null });
+	sendResponse({ avatarName: el?.textContent?.trim() ?? null });
 
 	return true; // Keeps the response channel open
 });

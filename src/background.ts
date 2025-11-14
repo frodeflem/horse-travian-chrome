@@ -1,4 +1,4 @@
-import { UserApi } from "./api";
+import { AdminApi } from "./api";
 
 async function ensureOffscreenDocument(): Promise<void> {
 	const exists = await chrome.offscreen.hasDocument();
@@ -6,22 +6,22 @@ async function ensureOffscreenDocument(): Promise<void> {
 		await chrome.offscreen.createDocument({
 			url: chrome.runtime.getURL("offscreen.html"),
 			reasons: [chrome.offscreen.Reason.DOM_PARSER],
-			justification: "Parse captured HTML to extract player name.",
+			justification: "Parse captured HTML to extract avatar name.",
 		});
 	}
 }
 
-async function extractPlayerName(html: string): Promise<string | null> {
+async function extractAvatarName(html: string): Promise<string | null> {
 	await ensureOffscreenDocument();
 
 	return new Promise((resolve) => {
 		chrome.runtime.sendMessage({ type: "parse-html", html }, (response) => {
-			resolve(response?.playerName ?? null);
+			resolve(response?.avatarName ?? null);
 		});
 	});
 }
 
-chrome.action.onClicked.addListener(async (tab) => {
+async function parsePage(tab: chrome.tabs.Tab) {
 	if (!tab || !tab.id) {
 		console.error("No active tab found.");
 		return;
@@ -49,23 +49,70 @@ chrome.action.onClicked.addListener(async (tab) => {
 		return;
 	}
 
-	const { adminUsername } = await chrome.storage.local.get(["adminUsername"]);
-	if (!adminUsername) {
+	const { apiKey } = await chrome.storage.local.get(["apiKey"]);
+	if (!apiKey) {
 		return chrome.runtime.openOptionsPage();
 	}
 
-	const playerName = await extractPlayerName(html);
-	if (!playerName) {
-		throw new Error("Player name not found in the HTML.");
+	const avatarName = await extractAvatarName(html);
+	if (!avatarName) {
+		throw new Error("Avatar name not found in the HTML.");
 	}
 
 	// Extract 'ts2.x1.europe' from 'https://ts2.x1.europe.travian.com/':
-	const avatarHost = url.split("://")[1].split(".travian.com")[0];
+	// const avatarHost = url.split("://")[1].split(".travian.com")[0];
 
-	// Get access token for the Travian avatar extracted from the page
-	// to ensure the admin is authorized to access the avatar:
-	await UserApi.setUserByName(playerName, avatarHost);
-
-	await UserApi.parsePage(url, html);
+	chrome.action.setBadgeText({ text: "..." });
+	await AdminApi.parsePage(url, avatarName, html);
 	console.log("Page parsed: ", url);
+	// Show a temporary label on the extension button:
+	chrome.action.setBadgeText({ text: "✔️" });
+	setTimeout(() => {
+		chrome.action.setBadgeText({ text: "" });
+	}, 3000);
+
+	// Show a popup message at the extension button:
+	// chrome.action.setPopup({ popup: "popup.html" });
+	if (false) {
+		chrome.action.setTitle({ title: `Parsed: ${avatarName}` });
+		// chrome.action.setIcon({ path: "images/icon-48.png" }); // Change icon to indicate success
+
+		const { notificationId } = await chrome.storage.local.get(["notificationId"]);
+
+		if (notificationId) {
+			chrome.notifications.clear(notificationId, () => {
+				console.log("Cleared previous notification:", notificationId);
+			});
+		}
+
+		chrome.notifications.create(
+			{
+				type: "basic",
+				iconUrl: "images/icon-48.png",
+				title: "Page Parsed",
+				message: `Parsed page for ${avatarName} successfully!`,
+			},
+			(notificationId) => {
+				console.log("Notification created:", notificationId);
+				chrome.storage.local.set({ notificationId });
+			}
+		);
+	}
+}
+
+chrome.action.onClicked.addListener(parsePage);
+
+chrome.commands.onCommand.addListener((command) => {
+	if (command === "do-something") {
+		console.log("🔑 Ctrl+Q triggered");
+
+		// Example: inject content script into active tab
+		chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+			const tab = tabs[0];
+			if (!tab?.id) return;
+			parsePage(tab);
+		});
+
+		// You can also trigger anything else here — open popup, capture DOM, etc.
+	}
 });
